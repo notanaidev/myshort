@@ -1,0 +1,566 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, maximum-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#080808">
+<title>MyTube Shorts</title>
+
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+<script src="https://cdn.jsdelivr.net/npm/tus-js-client@4.3.1/dist/tus.min.js"></script>
+
+<style>
+*{box-sizing:border-box}
+:root{--red:#ff3038;--bg:#080808;--panel:#191919;--muted:#aaa}
+html,body{margin:0;width:100%;height:100%;overflow:hidden;background:var(--bg);color:white;font-family:Arial,sans-serif}
+button,input,textarea{font:inherit}
+button{cursor:pointer;border:0;color:white}
+#app{height:100dvh;width:100%;overflow:hidden;background:#080808}
+.topbar{position:fixed;top:0;left:0;right:0;height:62px;z-index:5;display:flex;align-items:center;justify-content:space-between;padding:0 20px;background:linear-gradient(#000a,transparent);pointer-events:none}
+.topbar>*{pointer-events:auto}
+.logo{font-size:21px;font-weight:850;letter-spacing:-1px}
+.logo span{color:var(--red)}
+.top-actions{display:flex;gap:10px;align-items:center}
+.circle{width:42px;height:42px;border-radius:50%;background:#222b;color:white;font-size:19px;display:grid;place-items:center;backdrop-filter:blur(10px)}
+#accountBtn{font-size:13px;padding:11px 16px;border-radius:25px;background:#292929}
+#feed{height:100%;width:100%;overflow-y:auto;overflow-x:hidden;scroll-snap-type:y mandatory;overscroll-behavior-y:contain;scrollbar-width:none}
+#feed::-webkit-scrollbar{display:none}
+.short{height:100dvh;width:100%;position:relative;scroll-snap-align:start;scroll-snap-stop:always;background:#080808;overflow:hidden;display:flex;align-items:center;justify-content:center}
+.short video{width:100%;height:100%;object-fit:contain;background:#080808}
+.short-gradient{position:absolute;inset:0;pointer-events:none;background:linear-gradient(0deg,#000c 0%,transparent 42%,transparent 70%,#0005 100%)}
+.short-info{position:absolute;left:18px;right:88px;bottom:calc(35px + env(safe-area-inset-bottom));z-index:2;text-shadow:0 1px 5px #000}
+.short-title{font-size:16px;font-weight:700;margin-bottom:9px;line-height:1.35}
+.short-description{font-size:14px;line-height:1.4;color:#eee;white-space:pre-wrap;overflow-wrap:anywhere}
+.short-date{font-size:12px;color:#ccc;margin-top:10px}
+.actions{position:absolute;right:13px;bottom:calc(45px + env(safe-area-inset-bottom));z-index:3;display:flex;flex-direction:column;align-items:center;gap:20px}
+.action{display:flex;flex-direction:column;align-items:center;gap:5px;background:none;padding:0;color:white;text-shadow:0 2px 5px #000}
+.action-icon{width:48px;height:48px;border-radius:50%;background:#ffffff20;backdrop-filter:blur(8px);display:grid;place-items:center;font-size:25px}
+.action small{font-size:11px;font-weight:600}
+.action.liked .action-icon{color:var(--red)}
+.pause-indicator{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);font-size:55px;opacity:0;pointer-events:none;transition:opacity .15s}
+.short.paused .pause-indicator{opacity:.85}
+#empty{position:fixed;inset:0;display:none;align-items:center;justify-content:center;text-align:center;padding:30px;color:#aaa;z-index:2}
+.empty-content{max-width:300px}
+.empty-icon{font-size:55px;margin-bottom:15px}
+.empty-content h2{color:white}
+.empty-content button{margin-top:15px;background:var(--red);padding:13px 20px;border-radius:25px}
+.bottom-nav{position:fixed;bottom:0;left:0;right:0;height:60px;padding-bottom:env(safe-area-inset-bottom);z-index:6;display:flex;justify-content:space-around;align-items:center;background:linear-gradient(transparent,#000b);pointer-events:none}
+.bottom-nav button{pointer-events:auto;background:none;color:white;display:flex;flex-direction:column;align-items:center;gap:3px;font-size:19px}
+.bottom-nav small{font-size:10px}
+.overlay{position:fixed;inset:0;z-index:20;background:#000c;display:none;align-items:center;justify-content:center;padding:18px}
+.modal{background:#191919;border:1px solid #333;padding:25px;border-radius:19px;width:min(460px,100%);max-height:90dvh;overflow:auto}
+.modal h2{margin:0 0 20px}
+.modal input,.modal textarea{width:100%;padding:14px;margin:8px 0 17px;background:#292929;border:1px solid #444;border-radius:10px;color:white;outline:none}
+.modal textarea{min-height:90px;resize:vertical}
+.modal label{font-size:13px;color:#ccc}
+.primary{background:var(--red);color:white;padding:13px 18px;border-radius:25px;font-weight:700}
+.secondary{background:#333;color:white;padding:12px 18px;border-radius:25px}
+.close{float:right;background:#333;border-radius:50%;width:34px;height:34px}
+.muted{color:#999;font-size:13px}
+#progress{width:100%;accent-color:var(--red)}
+#searchPanel{position:fixed;inset:0;z-index:15;background:#101010;display:none;padding:75px 18px 20px}
+#searchInput{width:100%;padding:15px 18px;background:#252525;border:1px solid #444;border-radius:30px;color:white;outline:none}
+#searchResults{margin-top:18px;color:#aaa;font-size:14px}
+#searchResults button{display:block;width:100%;text-align:left;background:#222;padding:14px;border-radius:10px;margin:8px 0}
+@media(min-width:700px){
+.short-info{left:max(30px,calc((100vw - 650px)/2));right:calc(50% - 230px);bottom:65px}
+.actions{right:max(25px,calc((100vw - 650px)/2))}
+}
+@media(max-width:500px){
+.topbar{padding:0 14px}
+.short-info{left:14px;right:78px}
+.actions{right:9px;gap:17px}
+.action-icon{width:44px;height:44px}
+}
+</style>
+</head>
+
+<body>
+<div id="app">
+
+<header class="topbar">
+  <div class="logo">▶ <span>My</span>Tube</div>
+  <div class="top-actions">
+    <button class="circle" onclick="openSearch()" aria-label="Search">⌕</button>
+    <button id="accountBtn" onclick="openAuth()">Sign in</button>
+  </div>
+</header>
+
+<main id="feed"></main>
+
+<div id="empty">
+  <div class="empty-content">
+    <div class="empty-icon">▶</div>
+    <h2>No Shorts yet</h2>
+    <p>Uploaded videos will appear here. Be the first to add one!</p>
+    <button onclick="openUpload()">＋ Upload a Short</button>
+  </div>
+</div>
+
+<nav class="bottom-nav">
+  <button onclick="goHome()">⌂<small>Home</small></button>
+  <button onclick="openSearch()">⌕<small>Search</small></button>
+  <button onclick="openUpload()">＋<small>Upload</small></button>
+  <button onclick="openAuth()">◉<small>Account</small></button>
+</nav>
+</div>
+
+<!-- SEARCH -->
+<div id="searchPanel">
+  <button class="close" onclick="closeSearch()">✕</button>
+  <h2>Search MyTube</h2>
+  <input id="searchInput" placeholder="Search Shorts..." oninput="searchVideos()">
+  <div id="searchResults"></div>
+</div>
+
+<!-- AUTH -->
+<div class="overlay" id="authModal">
+  <div class="modal">
+    <button class="close" onclick="closeModal('authModal')">✕</button>
+    <h2 id="authTitle">Sign in</h2>
+    <form id="authForm">
+      <input id="email" type="email" placeholder="Email address" required>
+      <input id="password" type="password" placeholder="Password" required minlength="6">
+      <button class="primary" style="width:100%" id="authSubmit">Sign in</button>
+    </form>
+    <p class="muted" id="authToggle" onclick="toggleAuth()" style="cursor:pointer">Need an account? Sign up</p>
+    <p class="muted" id="authMessage"></p>
+  </div>
+</div>
+
+<!-- UPLOAD -->
+<div class="overlay" id="uploadModal">
+  <div class="modal">
+    <button class="close" onclick="closeModal('uploadModal')">✕</button>
+    <h2>Upload a Short</h2>
+    <form id="uploadForm">
+      <label>Title</label>
+      <input id="title" maxlength="160" required placeholder="Give your Short a title">
+      <label>Description</label>
+      <textarea id="description" maxlength="5000" placeholder="Add a description..."></textarea>
+      <label>Choose video (MP4, WebM or MOV)</label>
+      <input id="videoFile" type="file" accept="video/mp4,video/webm,video/quicktime" required>
+      <p class="muted">Maximum file size: 1 GB. Supabase project limits still apply.</p>
+      <button class="primary" style="width:100%" id="uploadButton">Upload Short</button>
+    </form>
+    <p class="muted" id="uploadStatus"></p>
+    <progress id="progress" value="0" max="100" style="display:none"></progress>
+  </div>
+</div>
+
+<script>
+// SUPABASE CONFIGURATION
+const SUPABASE_URL = "https://fktecedlibbsbqodfutf.supabase.co";
+const SUPABASE_KEY = "sb_publishable_V5oUNsp4QMU8Etq6b8EXpw_Vt7QjB9K";
+const PROJECT_ID = "fktecedlibbsbqodfutf";
+const BUCKET = "mytube-media";
+const MAX_SIZE = 1024 * 1024 * 1024;
+
+const db = window.supabase.createClient(SUPABASE_URL,SUPABASE_KEY);
+
+let currentUser = null;
+let allVideos = [];
+let visibleVideos = [];
+let creatingAccount = false;
+let observer = null;
+let liked = new Set();
+
+const $ = id => document.getElementById(id);
+
+function escapeHTML(value=""){
+  return String(value).replace(/[&<>"']/g,c=>({
+    "&":"&amp;","<":"&lt;",">":"&gt;",
+    '"':"&quot;","'":"&#39;"
+  })[c]);
+}
+
+function openModal(id){$(id).style.display="flex"}
+function closeModal(id){$(id).style.display="none"}
+
+function videoURL(v){
+  return db.storage.from(BUCKET).getPublicUrl(v.storage_path).data.publicUrl;
+}
+
+function openAuth(){
+  if(currentUser){
+    if(confirm("Sign out of MyTube?"))db.auth.signOut();
+  }else openModal("authModal");
+}
+
+function toggleAuth(){
+  creatingAccount=!creatingAccount;
+  $("authTitle").textContent=creatingAccount?"Create account":"Sign in";
+  $("authSubmit").textContent=creatingAccount?"Sign up":"Sign in";
+  $("authToggle").textContent=creatingAccount?
+    "Already have an account? Sign in":"Need an account? Sign up";
+  $("authMessage").textContent="";
+}
+
+$("authForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+  const email=$("email").value;
+  const password=$("password").value;
+  $("authMessage").textContent="Please wait...";
+
+  const result=creatingAccount
+    ?await db.auth.signUp({email,password})
+    :await db.auth.signInWithPassword({email,password});
+
+  if(result.error){
+    $("authMessage").textContent=result.error.message;
+    return;
+  }
+
+  if(creatingAccount&&!result.data.session){
+    $("authMessage").textContent="Check your email to confirm your account.";
+    return;
+  }
+
+  closeModal("authModal");
+  updateAccount();
+});
+
+async function updateAccount(){
+  const {data}=await db.auth.getUser();
+  currentUser=data.user||null;
+  $("accountBtn").textContent=currentUser?"Sign out":"Sign in";
+}
+
+db.auth.onAuthStateChange(()=>updateAccount());
+
+async function loadVideos(){
+  $("empty").style.display="none";
+  $("feed").innerHTML="";
+
+  const {data,error}=await db.from("videos")
+    .select("*")
+    .order("created_at",{ascending:false});
+
+  if(error){
+    $("empty").style.display="flex";
+    $("empty").querySelector("p").textContent="Could not load videos: "+error.message;
+    return;
+  }
+
+  allVideos=data||[];
+  visibleVideos=allVideos;
+  renderFeed();
+}
+
+function renderFeed(){
+  const feed=$("feed");
+
+  if(observer)observer.disconnect();
+
+  if(!visibleVideos.length){
+    feed.innerHTML="";
+    $("empty").style.display="flex";
+    return;
+  }
+
+  $("empty").style.display="none";
+
+  feed.innerHTML=visibleVideos.map((v,i)=>{
+    const url=videoURL(v);
+    const isLiked=liked.has(v.id);
+
+    return `
+    <section class="short" data-id="${escapeHTML(v.id)}">
+      <video
+        src="${escapeHTML(url)}"
+        playsinline
+        webkit-playsinline
+        loop
+        muted
+        preload="${i===0?"auto":"metadata"}"
+      ></video>
+
+      <div class="short-gradient"></div>
+
+      <div class="short-info">
+        <div class="short-title">${escapeHTML(v.title||"Untitled Short")}</div>
+        <div class="short-description">${escapeHTML(v.description||"")}</div>
+        <div class="short-date">MyTube · ${new Date(v.created_at).toLocaleDateString()}</div>
+      </div>
+
+      <div class="actions">
+        <button class="action ${isLiked?"liked":""}" data-action="like">
+          <span class="action-icon">${isLiked?"♥":"♡"}</span>
+          <small>${isLiked?"Liked":"Like"}</small>
+        </button>
+        <button class="action" data-action="sound">
+          <span class="action-icon">🔇</span>
+          <small>Sound</small>
+        </button>
+        <button class="action" data-action="share">
+          <span class="action-icon">↗</span>
+          <small>Share</small>
+        </button>
+        <button class="action" data-action="more">
+          <span class="action-icon">•••</span>
+          <small>More</small>
+        </button>
+      </div>
+
+      <div class="pause-indicator">▶</div>
+    </section>`;
+  }).join("");
+
+  setupObserver();
+}
+
+function setupObserver(){
+  observer=new IntersectionObserver(entries=>{
+    entries.forEach(entry=>{
+      const video=entry.target.querySelector("video");
+      const section=entry.target;
+
+      if(entry.isIntersecting&&entry.intersectionRatio>=0.65){
+        document.querySelectorAll(".short video").forEach(other=>{
+          if(other!==video)other.pause();
+        });
+        video.play().catch(()=>{});
+        section.classList.remove("paused");
+      }else{
+        video.pause();
+      }
+    });
+  },{root:$("feed"),threshold:[0,0.65,1]});
+
+  document.querySelectorAll(".short").forEach(s=>observer.observe(s));
+}
+
+// Tap the video to pause or resume.
+// Buttons are handled separately.
+$("feed").addEventListener("click",async e=>{
+  const section=e.target.closest(".short");
+  if(!section)return;
+
+  const action=e.target.closest("[data-action]");
+  if(!action){
+    const video=section.querySelector("video");
+    if(video.paused){
+      await video.play().catch(()=>{});
+      section.classList.remove("paused");
+    }else{
+      video.pause();
+      section.classList.add("paused");
+    }
+    return;
+  }
+
+  const id=section.dataset.id;
+  const video=section.querySelector("video");
+
+  switch(action.dataset.action){
+    case "like":{
+      if(liked.has(id))liked.delete(id);
+      else liked.add(id);
+      action.classList.toggle("liked",liked.has(id));
+      action.querySelector(".action-icon").textContent=liked.has(id)?"♥":"♡";
+      action.querySelector("small").textContent=liked.has(id)?"Liked":"Like";
+      break;
+    }
+    case "sound":{
+      video.muted=!video.muted;
+      action.querySelector(".action-icon").textContent=video.muted?"🔇":"🔊";
+      action.querySelector("small").textContent=video.muted?"Sound off":"Sound on";
+      break;
+    }
+    case "share":{
+      const v=allVideos.find(x=>x.id===id);
+      const url=location.origin+location.pathname+"?short="+encodeURIComponent(id);
+      if(navigator.share){
+        navigator.share({title:v?.title||"MyTube Short",url}).catch(()=>{});
+      }else if(navigator.clipboard){
+        navigator.clipboard.writeText(url);
+        action.querySelector("small").textContent="Copied!";
+      }else{
+        prompt("Copy this link:",url);
+      }
+      break;
+    }
+    case "more":{
+      const v=allVideos.find(x=>x.id===id);
+      alert((v?.title||"Short")+"\n\n"+(v?.description||"No description."));
+      break;
+    }
+  }
+});
+
+function openUpload(){
+  if(!currentUser){
+    openAuth();
+    $("authMessage").textContent="Sign in to upload Shorts.";
+    return;
+  }
+  openModal("uploadModal");
+}
+
+$("uploadForm").addEventListener("submit",async e=>{
+  e.preventDefault();
+
+  if(!currentUser)return;
+
+  const file=$("videoFile").files[0];
+  const title=$("title").value.trim();
+  const description=$("description").value.trim();
+
+  if(!file||!title)return;
+
+  if(file.size>MAX_SIZE){
+    $("uploadStatus").textContent="That file is larger than 1 GB.";
+    return;
+  }
+
+  const allowed=["video/mp4","video/webm","video/quicktime"];
+  if(!allowed.includes(file.type)){
+    $("uploadStatus").textContent="Please choose an MP4, WebM or MOV video.";
+    return;
+  }
+
+  const button=$("uploadButton");
+  const progress=$("progress");
+  button.disabled=true;
+  progress.style.display="block";
+  progress.value=0;
+  $("uploadStatus").textContent="Preparing upload...";
+
+  const extension={
+    "video/mp4":"mp4",
+    "video/webm":"webm",
+    "video/quicktime":"mov"
+  }[file.type];
+
+  const path=`${currentUser.id}/${crypto.randomUUID()}.${extension}`;
+
+  try{
+    const {data:{session},error:sessionError}=await db.auth.getSession();
+    if(sessionError)throw sessionError;
+    if(!session)throw new Error("Your session expired. Sign in again.");
+
+    await new Promise((resolve,reject)=>{
+      const upload=new tus.Upload(file,{
+        endpoint:`https://${PROJECT_ID}.storage.supabase.co/storage/v1/upload/resumable`,
+        retryDelays:[0,3000,5000,10000,20000],
+        headers:{
+          authorization:`Bearer ${session.access_token}`,
+          apikey:SUPABASE_KEY,
+          "x-upsert":"false"
+        },
+        metadata:{
+          bucketName:BUCKET,
+          objectName:path,
+          contentType:file.type,
+          cacheControl:"3600"
+        },
+        chunkSize:6*1024*1024,
+        uploadDataDuringCreation:true,
+        removeFingerprintOnSuccess:true,
+        onError:error=>reject(error),
+        onProgress:(uploaded,total)=>{
+          const percent=Math.round(uploaded/total*100);
+          progress.value=percent;
+          $("uploadStatus").textContent=`Uploading... ${percent}%`;
+        },
+        onSuccess:()=>resolve()
+      });
+
+      upload.findPreviousUploads().then(previous=>{
+        if(previous.length)upload.resumeFromPreviousUpload(previous[0]);
+        upload.start();
+      }).catch(reject);
+    });
+
+    $("uploadStatus").textContent="Saving video details...";
+
+    const {error}=await db.from("videos").insert({
+      user_id:currentUser.id,
+      title,
+      description,
+      storage_path:path
+    });
+
+    if(error){
+      await db.storage.from(BUCKET).remove([path]);
+      throw error;
+    }
+
+    $("uploadStatus").textContent="Upload complete!";
+    $("uploadForm").reset();
+
+    await loadVideos();
+    $("feed").scrollTo({top:0,behavior:"smooth"});
+
+    setTimeout(()=>closeModal("uploadModal"),1000);
+
+  }catch(error){
+    $("uploadStatus").textContent="Upload failed: "+error.message;
+  }finally{
+    button.disabled=false;
+  }
+});
+
+// SEARCH
+function openSearch(){
+  $("searchPanel").style.display="block";
+  $("searchInput").focus();
+}
+function closeSearch(){
+  $("searchPanel").style.display="none";
+  $("searchInput").value="";
+  visibleVideos=allVideos;
+  renderFeed();
+}
+function searchVideos(){
+  const q=$("searchInput").value.toLowerCase().trim();
+
+  const results=allVideos.filter(v=>
+    (v.title||"").toLowerCase().includes(q)||
+    (v.description||"").toLowerCase().includes(q)
+  );
+
+  $("searchResults").innerHTML=results.map(v=>`
+    <button data-search-id="${escapeHTML(v.id)}">
+      ▶ ${escapeHTML(v.title)}
+    </button>
+  `).join("")||"No matching Shorts found.";
+
+  $("searchResults").querySelectorAll("[data-search-id]").forEach(btn=>{
+    btn.addEventListener("click",()=>{
+      const index=allVideos.findIndex(v=>v.id===btn.dataset.searchId);
+      visibleVideos=allVideos;
+      renderFeed();
+      closeSearch();
+      requestAnimationFrame(()=>{
+        const section=document.querySelectorAll(".short")[index];
+        section?.scrollIntoView({behavior:"smooth"});
+      });
+    });
+  });
+}
+
+function goHome(){
+  visibleVideos=allVideos;
+  renderFeed();
+  $("feed").scrollTo({top:0,behavior:"smooth"});
+}
+
+// Support direct links to a particular Short.
+async function openSharedShort(){
+  const id=new URLSearchParams(location.search).get("short");
+  if(!id)return;
+  const index=allVideos.findIndex(v=>v.id===id);
+  if(index>=0){
+    requestAnimationFrame(()=>{
+      document.querySelectorAll(".short")[index]?.scrollIntoView();
+    });
+  }
+}
+
+updateAccount();
+loadVideos().then(openSharedShort);
+</script>
+</body>
+</html>
