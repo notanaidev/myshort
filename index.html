@@ -819,14 +819,26 @@ function renderFeed(){
   warmVideos(0);
 }
 
-function appendSections(videos){
+function appendSections(videos,startIndex=allVideos.length-videos.length){
   const feed=$("feed");
-  const startIndex=allVideos.length-videos.length;
   feed.insertAdjacentHTML("beforeend",videos.map((v,i)=>sectionHTML(v,startIndex+i)).join(""));
   const sections=feed.querySelectorAll(".short");
   for(let i=sections.length-videos.length;i<sections.length;i++){
     if(observer)observer.observe(sections[i]);
   }
+}
+
+let loopAppending=false;
+let loopCycles=0;
+function appendLoopBatch(){
+  // Once the server has no more pages, repeat the loaded feed from its beginning.
+  // Keep the source list and pagination offset unchanged; only add another visual pass.
+  if(loopAppending||hasMore||!allVideos.length)return;
+  loopAppending=true;
+  const startIndex=$("feed").querySelectorAll(".short").length;
+  appendSections(allVideos.slice(),startIndex);
+  loopCycles++;
+  loopAppending=false;
 }
 
 let playbackRequest=0;
@@ -1004,6 +1016,8 @@ function showEmpty(title,text){
 }
 
 async function loadVideos(){
+  loopAppending=false;
+  loopCycles=0;
   $("empty").hidden=true;
   $("loading").hidden=false;
   pageOffset=0;hasMore=true;allVideos=[];
@@ -1031,6 +1045,9 @@ async function loadVideos(){
   await loadExtras();
   if(feedMode==="foryou")rankFeed();
   renderFeed();
+  // If the first fetch already reached the end, create the first repeated pass
+  // immediately so even a tiny feed can scroll and continue looping.
+  if(!hasMore&&videos.length)appendLoopBatch();
 
   if(!videos.length){
     if(feedMode==="following")showEmpty("Nothing here yet","Follow creators to see their latest videos.");
@@ -1049,19 +1066,27 @@ async function loadMoreVideos(){
     pageOffset+=PAGE_SIZE;
     if(data.length<PAGE_SIZE)hasMore=false;
     const fresh=data.filter(v=>!blocked.has(v.user_id));
-    if(!fresh.length)return;
-    await loadExtrasFor(fresh);
-    allVideos.push(...fresh);
-    appendSections(fresh);
+    if(fresh.length){
+      await loadExtrasFor(fresh);
+      allVideos.push(...fresh);
+      appendSections(fresh);
+    }
   }finally{
     loadingMore=false;
+    if(!hasMore)appendLoopBatch();
   }
 }
 
 $("feed").addEventListener("scroll",()=>{
-  if(loadingMore||!hasMore||!allVideos.length)return;
+  if(!allVideos.length)return;
   const f=$("feed");
-  if(f.scrollTop+f.clientHeight>=f.scrollHeight-700)loadMoreVideos();
+  if(f.scrollTop+f.clientHeight>=f.scrollHeight-700){
+    if(hasMore){
+      if(!loadingMore)loadMoreVideos();
+    }else{
+      appendLoopBatch();
+    }
+  }
 },{passive:true});
 
 function setFeedMode(mode){
